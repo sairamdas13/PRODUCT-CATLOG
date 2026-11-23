@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Product Catalog</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, sans-serif; background: #e0f2f1; color: #222; min-height: 100vh; display: flex; flex-direction: column; }
+
+    header { background: #00695c; color: #fff; padding: 20px; text-align: center; }
+    header h1 { font-size: 26px; }
+    header p { font-size: 14px; margin-top: 4px; }
+
+    main { flex: 1; width: 100%; max-width: 1000px; margin: 20px auto; padding: 0 15px; }
+
+    .card { background: #fff; border: 1px solid #ccc; padding: 20px; margin-bottom: 20px; }
+    .card h2 { font-size: 18px; color: #00695c; margin-bottom: 12px; }
+
+    form { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    input { padding: 9px; border: 1px solid #999; font-size: 14px; width: 100%; }
+    input:disabled { background: #eee; color: #666; }
+    .wide { grid-column: span 3; }
+    button { padding: 9px 16px; border: none; color: #fff; font-size: 14px; cursor: pointer; }
+    .btn-save { background: #00897b; }
+    .btn-cancel { background: #546e7a; }
+    .btn-edit { background: #6a1b9a; padding: 6px 12px; }
+    .btn-delete { background: #c62828; padding: 6px 12px; }
+    .form-buttons { grid-column: span 3; display: flex; gap: 10px; }
+
+    .search { display: flex; gap: 10px; margin-bottom: 12px; }
+    .search input { flex: 1; }
+
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #00695c; color: #fff; text-align: left; padding: 10px; font-size: 14px; }
+    td { padding: 10px; border-bottom: 1px solid #ddd; font-size: 14px; }
+    td.actions { display: flex; gap: 6px; }
+    .empty { text-align: center; padding: 15px; color: #666; }
+
+    #message { padding: 10px; margin-bottom: 15px; display: none; color: #fff; }
+    .ok { background: #00897b; }
+    .err { background: #c62828; }
+
+    footer { background: #00695c; color: #fff; text-align: center; padding: 14px; font-size: 13px; }
+
+    @media (max-width: 700px) {
+      form { grid-template-columns: 1fr; }
+      .wide, .form-buttons { grid-column: span 1; }
+      .card { overflow-x: auto; }
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Product Catalog</h1>
+    <p>Node.js, Express, MongoDB &amp; Mongoose &ndash; CRUD Operations</p>
+  </header>
+
+  <main>
+    <div id="message"></div>
+
+    <div class="card">
+      <h2 id="formTitle">Add Product</h2>
+      <!-- novalidate: validation is done by the API, so the error messages come from the server -->
+      <form id="productForm" novalidate>
+        <input type="text" id="productId" placeholder="Product ID (e.g. P101)">
+        <input type="text" id="name" placeholder="Product Name">
+        <input type="text" id="category" placeholder="Category">
+        <input type="text" id="price" placeholder="Price">
+        <input type="text" id="stock" placeholder="Stock">
+        <input type="text" id="description" placeholder="Description">
+        <div class="form-buttons">
+          <button type="submit" class="btn-save" id="saveBtn">Add Product</button>
+          <button type="button" class="btn-cancel" id="cancelBtn" style="display:none;">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>All Products</h2>
+      <div class="search">
+        <input type="text" id="searchBox" placeholder="Search by name, category or Product ID">
+        <button type="button" class="btn-save" id="searchBtn">Search</button>
+        <button type="button" class="btn-cancel" id="clearBtn">Show All</button>
+      </div>
+      <table>
+        <thead>
+          <tr><th>Product ID</th><th>Name</th><th>Category</th><th>Price</th><th>Stock</th><th>Actions</th></tr>
+        </thead>
+        <tbody id="productTable"></tbody>
+      </table>
+    </div>
+  </main>
+
+  <footer>
+    25SC2008 &ndash; Full Stack Web Development &ndash; Lab Workbook &nbsp;|&nbsp; Experiment 8
+  </footer>
+
+  <script>
+    const API = '/products';
+    const form = document.getElementById('productForm');
+    const table = document.getElementById('productTable');
+    const msg = document.getElementById('message');
+    const searchBox = document.getElementById('searchBox');
+    let editId = null;
+
+    function showMessage(text, ok) {
+      msg.textContent = text;
+      msg.className = ok ? 'ok' : 'err';
+      msg.style.display = 'block';
+      setTimeout(() => { msg.style.display = 'none'; }, 4000);
+    }
+
+    function esc(v) {
+      return String(v === undefined || v === null ? '' : v)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // GET /products  or  GET /products/search?q=...
+    async function loadProducts() {
+      const q = searchBox.value.trim();
+      const url = q ? `${API}/search?q=${encodeURIComponent(q)}` : API;
+      const res = await fetch(url);
+      const products = await res.json();
+      if (!res.ok) { showMessage(products.message, false); return; }
+      if (products.length === 0) {
+        table.innerHTML = '<tr><td colspan="6" class="empty">No products found</td></tr>';
+        return;
+      }
+      table.innerHTML = products.map(p => `
+        <tr>
+          <td>${esc(p.productId)}</td>
+          <td>${esc(p.name)}</td>
+          <td>${esc(p.category)}</td>
+          <td>${esc(p.price)}</td>
+          <td>${esc(p.stock)}</td>
+          <td class="actions">
+            <button class="btn-edit" data-id="${esc(p.productId)}" onclick="startEdit(this.dataset.id)">Edit</button>
+            <button class="btn-delete" data-id="${esc(p.productId)}" onclick="removeProduct(this.dataset.id)">Delete</button>
+          </td>
+        </tr>`).join('');
+    }
+
+    function resetForm() {
+      editId = null;
+      form.reset();
+      document.getElementById('productId').disabled = false;
+      document.getElementById('formTitle').textContent = 'Add Product';
+      document.getElementById('saveBtn').textContent = 'Add Product';
+      document.getElementById('cancelBtn').style.display = 'none';
+    }
+
+    // GET /products/:productId -> fill the form for editing
+    async function startEdit(id) {
+      const res = await fetch(`${API}/${encodeURIComponent(id)}`);
+      const p = await res.json();
+      if (!res.ok) { showMessage(p.message, false); return; }
+      editId = id;
+      document.getElementById('productId').value = p.productId;
+      document.getElementById('productId').disabled = true;
+      document.getElementById('name').value = p.name;
+      document.getElementById('category').value = p.category || '';
+      document.getElementById('price').value = p.price;
+      document.getElementById('stock').value = p.stock;
+      document.getElementById('description').value = p.description || '';
+      document.getElementById('formTitle').textContent = 'Update Product (' + id + ')';
+      document.getElementById('saveBtn').textContent = 'Update Product';
+      document.getElementById('cancelBtn').style.display = 'inline-block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    // POST /products  or  PUT /products/:productId
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const stockText = document.getElementById('stock').value.trim();
+      // price and stock are sent as typed; the server checks they are valid numbers
+      const body = {
+        productId: document.getElementById('productId').value,
+        name: document.getElementById('name').value,
+        category: document.getElementById('category').value,
+        description: document.getElementById('description').value,
+        price: document.getElementById('price').value.trim(),
+        stock: stockText === '' ? undefined : stockText
+      };
+      const url = editId ? `${API}/${encodeURIComponent(editId)}` : API;
+      const method = editId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method: method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      const json = await res.json();
+      if (res.ok) {
+        showMessage(json.message, true);
+        resetForm();
+        loadProducts();
+      } else {
+        const details = json.errors ? ': ' + json.errors.join(', ') : '';
+        showMessage(json.message + details, false);
+      }
+    });
+
+    document.getElementById('cancelBtn').addEventListener('click', resetForm);
+    document.getElementById('searchBtn').addEventListener('click', loadProducts);
+    searchBox.addEventListener('keydown', (e) => { if (e.key === 'Enter') loadProducts(); });
+    document.getElementById('clearBtn').addEventListener('click', () => { searchBox.value = ''; loadProducts(); });
+
+    // DELETE /products/:productId
+    async function removeProduct(id) {
+      if (!confirm('Delete product ' + id + '?')) return;
+      const res = await fetch(`${API}/${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const json = await res.json();
+      showMessage(json.message, res.ok);
+      loadProducts();
+    }
+
+    loadProducts();
+  </script>
+</body>
+</html>
